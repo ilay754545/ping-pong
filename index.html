@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ultimate Ping Pong</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <h1>Ultimate Ping Pong</h1>
+      <div class="controls">
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnPause">Pause</button>
+        <button id="btnReset">Reset</button>
+        <select id="mode">
+          <option value="pve" selected>Player vs AI</option>
+          <option value="pvp">Player vs Player</option>
+          <option value="pvp-online">Online PvP</option>
+        </select>
+        <select id="difficulty">
+          <option value="easy">Easy</option>
+          <option value="normal" selected>Normal</option>
+          <option value="hard">Hard</option>
+          <option value="insane">Insane</option>
+        </select>
+        <button id="btnQuickMatch" title="Find or create an online match">Quick Match</button>
+        <button id="btnGoogle" title="Sign in with Google">Sign in</button>
+        <span id="userBadge"></span>
+      </div>
+    </header>
+    <main>
+      <div class="hud">
+        <div class="score">
+          <span id="scoreLeft">0</span>
+          <span class="divider">:</span>
+          <span id="scoreRight">0</span>
+        </div>
+        <div class="status">
+          <span id="statusText">Press Start</span>
+        </div>
+      </div>
+      <div class="board">
+        <canvas id="game" width="1200" height="700"></canvas>
+      </div>
+    </main>
+    <footer class="footer">
+      <div>
+        Controls: 
+        <strong>Player 1</strong> W/S, 
+        <strong>Player 2</strong> ↑/↓, 
+        <strong>Serve</strong> Space, 
+        <strong>Pause</strong> P
+      </div>
+      <div>
+        Power-ups: Speed, Sticky, Multi-ball, Shield
+      </div>
+    </footer>
+  </div>
+  <!-- Firebase SDKs (compat for simplicity in vanilla HTML) -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <!-- Your Firebase config (fill in credentials) -->
+  <script src="firebase-config.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
