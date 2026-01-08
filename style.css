@@ -55,14 +55,22 @@ canvas#game {
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,0.5), inset 0 0 80px rgba(0,0,0,0.6);
 }
+.server-box {
+  display: flex;
+  gap: 8px;
+  background: rgba(255,255,255,0.04);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+#serverIp {
+  padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.2); color: var(--text);
+  width: 140px;
+  outline: none;
+}
+#serverIp:focus {
+  border-color: var(--accent);
+}
+
 .footer { display: flex; justify-content: space-between; padding: 12px 24px; color: var(--muted); }
-#btnGoogle {
-  background: #fff; color: #111827; border: 1px solid rgba(0,0,0,0.12);
-  display: inline-flex; align-items: center; gap: 8px;
-}
-#btnGoogle::before {
-  content: ""; width: 16px; height: 16px; display: inline-block;
-  background: url('https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg') no-repeat center/contain;
-}
-#userBadge { color: var(--muted); font-size: 12px; margin-left: 6px; }
-#btnQuickMatch { border-style: dashed; }

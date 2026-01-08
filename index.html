@@ -28,9 +28,10 @@
           <option value="hard">Hard</option>
           <option value="insane">Insane</option>
         </select>
-        <button id="btnQuickMatch" title="Find or create an online match">Quick Match</button>
-        <button id="btnGoogle" title="Sign in with Google">Sign in</button>
-        <span id="userBadge"></span>
+        <div class="server-box">
+          <input type="text" id="serverIp" placeholder="Server IP (e.g. 192.168.1.5)">
+          <button id="btnConnect" class="primary">Connect</button>
+        </div>
       </div>
     </header>
     <main>
@@ -61,12 +62,6 @@
       </div>
     </footer>
   </div>
-  <!-- Firebase SDKs (compat for simplicity in vanilla HTML) -->
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-  <!-- Your Firebase config (fill in credentials) -->
-  <script src="firebase-config.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

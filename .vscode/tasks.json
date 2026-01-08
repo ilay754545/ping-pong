@@ -3,18 +3,27 @@
 	"tasks": [
 		{
 			"type": "shell",
-			"label": "Open Ping Pong in Browser",
+			"label": "Launch LAN Server",
+			"command": "C:/python/ping-pong/.venv/Scripts/python.exe",
+			"args": [
+				"server.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "shell",
+			"label": "Open Localhost in Browser",
 			"command": "powershell",
 			"args": [
 				"Start-Process",
-				"$env:DEFAULT_BROWSER",
-				"index.html"
+				"http://localhost:8001"
 			],
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": [
-				"$eslint-stylish"
-			]
+			"group": "none"
 		}
 	]
 }

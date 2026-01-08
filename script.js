@@ -16,104 +16,154 @@
   const btnReset = document.getElementById('btnReset');
   const modeSelect = document.getElementById('mode');
   const difficultySelect = document.getElementById('difficulty');
-  const btnQuickMatch = document.getElementById('btnQuickMatch');
-  const btnGoogle = document.getElementById('btnGoogle');
-  const userBadge = document.getElementById('userBadge');
+  const serverIpInput = document.getElementById('serverIp');
+  const btnConnect = document.getElementById('btnConnect');
 
-  // Firebase init (optional)
-  let firebaseApp = null, auth = null, db = null;
-  if (window.FIREBASE_CONFIG) {
-    firebaseApp = firebase.initializeApp(window.FIREBASE_CONFIG);
-    auth = firebase.auth();
-    db = firebase.database();
-  }
-
-  // If Firebase config missing, gracefully disable online features (no alerts)
-  if (!window.FIREBASE_CONFIG) {
-    if (btnGoogle) { btnGoogle.disabled = true; btnGoogle.title = 'Enable Firebase to use Google sign-in'; btnGoogle.textContent = 'Sign in (disabled)'; }
-    if (btnQuickMatch) { btnQuickMatch.disabled = true; btnQuickMatch.style.display = 'none'; }
-    const onlineOpt = Array.from(modeSelect.options).find(o => o.value === 'pvp-online');
-    if (onlineOpt) onlineOpt.disabled = true;
-    if (modeSelect.value === 'pvp-online') modeSelect.value = 'pve';
-  }
-
-  function setUserBadge(user) {
-    userBadge.textContent = user ? `Signed in: ${user.displayName || user.email}` : '';
-    btnGoogle.textContent = user ? 'Sign out' : 'Sign in';
-  }
-
-  if (auth) {
-    auth.onAuthStateChanged(setUserBadge);
-    btnGoogle.addEventListener('click', async () => {
-      if (!auth) return;
-      if (auth.currentUser) { await auth.signOut(); return; }
-      try {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        await auth.signInWithPopup(provider);
-      } catch (e) {
-        console.warn('Google sign-in failed', e);
-      }
-    });
+  // Pre-fill server IP if we're loading from a network address
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    serverIpInput.value = window.location.hostname;
   } else {
-    // Remove alert behavior; keep button disabled from above
-    if (btnGoogle) btnGoogle.addEventListener('click', () => {});
+    serverIpInput.value = 'localhost';
   }
 
-  // Online PvP quick match (very simple room matchmaking)
-  let roomRef = null; let isHost = false;
-  async function joinQuickMatch() {
-    if (!db) { alert('Configure Firebase Realtime Database to enable Online PvP.'); return; }
-    const roomsRef = db.ref('pongRooms');
-    const snap = await roomsRef.orderByChild('status').equalTo('waiting').limitToFirst(1).get();
-    let roomKey;
-    if (!snap.exists()) {
-      // create room
-      const newRef = roomsRef.push();
-      roomKey = newRef.key; isHost = true;
-      await newRef.set({ status: 'waiting', createdAt: Date.now(), hostScore: 0, guestScore: 0 });
-    } else {
-      roomKey = Object.keys(snap.val())[0]; isHost = false;
-      await roomsRef.child(roomKey).update({ status: 'ready' });
-    }
-    roomRef = roomsRef.child(roomKey);
-    statusTextEl.textContent = `Online room: ${roomKey} (${isHost ? 'Host' : 'Guest'})`;
+  // Network State
+  let socket = null;
+  let isHost = false;
+  let role = 'guest'; // assigned by server
 
-    // Sync minimal state: host authoritative ball and scores
+  async function connectToServer() {
+    const ip = serverIpInput.value || 'localhost';
+    const url = `ws://${ip}:8765`;
+    
+    statusTextEl.textContent = `Connecting to ${url}...`;
+    
+    try {
+      socket = new WebSocket(url);
+      
+      socket.onopen = () => {
+        statusTextEl.textContent = 'Connected! Waiting for role...';
+        btnConnect.textContent = 'Connected';
+        btnConnect.disabled = true;
+        serverIpInput.disabled = true;
+        // Switch mode automatically
+        State.mode = 'pvp-online';
+        modeSelect.value = 'pvp-online';
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleNetworkMessage(data);
+      };
+
+      socket.onclose = () => {
+        statusTextEl.textContent = 'Disconnected from server.';
+        btnConnect.textContent = 'Connect';
+        btnConnect.disabled = false;
+        serverIpInput.disabled = false;
+        socket = null;
+      };
+
+      socket.onerror = (err) => {
+        console.error('WebSocket Error:', err);
+        statusTextEl.textContent = 'Connection failed.';
+      };
+
+    } catch (e) {
+      console.error(e);
+      statusTextEl.textContent = 'Invalid Server address.';
+    }
+  }
+
+  function handleNetworkMessage(data) {
+    if (data.type === 'init') {
+      role = data.role;
+      isHost = (role === 'host');
+      statusTextEl.textContent = `Online: You are ${role.toUpperCase()}`;
+      return;
+    }
+
+    if (data.type === 'game-event') {
+      if (data.event === 'start') { State.running = true; scheduleServe(400); }
+      if (data.event === 'pause') { togglePause(false); }
+      if (data.event === 'reset') { resetGame(false); }
+      return;
+    }
+
+    // Sync state message
+    if (data.type === 'sync') {
+      // If I'm guest, I take Host's left paddle and ball/scores
+      // If I'm host, I take Guest's right paddle
+      if (!isHost) {
+        left.y = data.leftY;
+        State.leftScore = data.leftScore;
+        State.rightScore = data.rightScore;
+        
+        // Sync balls
+        if (data.balls) {
+          if (State.balls.length !== data.balls.length) {
+            State.balls = data.balls.map(b => new Ball(b.x, b.y, Math.hypot(b.vx, b.vy)));
+          }
+          data.balls.forEach((bData, i) => {
+            if (State.balls[i]) {
+              State.balls[i].x = bData.x;
+              State.balls[i].y = bData.y;
+              State.balls[i].vx = bData.vx;
+              State.balls[i].vy = bData.vy;
+            }
+          });
+        }
+
+        // Sync powerups
+        if (data.powerUps) {
+          State.powerUps = data.powerUps.map(p => {
+             const pu = new PowerUp(p.type, p.x, p.y);
+             pu.ttl = p.ttl;
+             return pu;
+          });
+        }
+      } else {
+        // I am host, sync the guest's paddle
+        right.y = data.rightY;
+      }
+    }
+  }
+
+  function sendSync() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    
+    const syncData = { type: 'sync' };
     if (isHost) {
-      // push updates periodically
-      setInterval(() => {
-        const b = State.balls[0] || null;
-        roomRef.child('state').set({
-          leftY: left.y, rightY: right.y,
-          ball: b ? { x: b.x, y: b.y, vx: b.vx, vy: b.vy } : null,
-          leftScore: State.leftScore, rightScore: State.rightScore,
-        });
-      }, 50);
+      syncData.leftY = left.y;
+      syncData.leftScore = State.leftScore;
+      syncData.rightScore = State.rightScore;
+      syncData.balls = State.balls.map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy }));
+      syncData.powerUps = State.powerUps.map(p => ({ type: p.type, x: p.x, y: p.y, ttl: p.ttl }));
     } else {
-      roomRef.child('state').on('value', (s) => {
-        const val = s.val(); if (!val) return;
-        left.y = val.leftY; right.y = val.rightY;
-        if (val.ball) {
-          if (!State.balls[0]) State.balls = [new Ball(val.ball.x, val.ball.y, Math.hypot(val.ball.vx, val.ball.vy))];
-          const b = State.balls[0];
-          b.x = val.ball.x; b.y = val.ball.y; b.vx = val.ball.vx; b.vy = val.ball.vy;
-        } else { State.balls = []; }
-        State.leftScore = val.leftScore; State.rightScore = val.rightScore;
-      });
+      syncData.rightY = right.y;
     }
+    
+    socket.send(JSON.stringify(syncData));
   }
 
-  if (btnQuickMatch) btnQuickMatch.addEventListener('click', joinQuickMatch);
+  function sendEvent(name) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: 'game-event', event: name }));
+  }
 
-  // In online mode, map local controls to left/right depending on host/guest
+  btnConnect.addEventListener('click', connectToServer);
+
+  // In online mode, map local controls
   function applyOnlineControls(dt) {
-    if (!roomRef) return false;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     // Host controls left, guest controls right
     if (isHost) {
       left.update(dt, 'w', 's');
     } else {
       right.update(dt, 'w', 's');
     }
+    // Frequency of sync: every frame or throttled? 
+    // We'll call sendSync in the main loop for maximum smoothness on LAN
+    sendSync();
     return true;
   }
 
@@ -476,52 +526,58 @@
 
     State.balls.forEach(b => b.update(dt));
 
-    // Collisions with paddles
-    State.balls.forEach(b => { collideBallWithPaddle(b, left); collideBallWithPaddle(b, right); });
+    // Authoritative collisions and scoring (only Host or local mode)
+    const isOnline = State.mode === 'pvp-online';
+    const isAuthoritative = !isOnline || isHost;
 
-    // Auto-return if ball gets stuck near AI side (realistic nudge back)
-    for (const b of State.balls) {
-      const nearRight = b.x > right.x - right.w && b.vx > 0;
-      const stalled = Math.abs(b.vx) < 40 && Math.abs(b.vy) < 40;
-      if (nearRight && stalled) {
-        // Aim back toward left paddle area with slight randomness
-        const targetY = left.y + rand(-50, 50);
-        const speed = 560 + rand(-40, 40);
-        const dx = (left.x + left.w) - b.x;
-        const dy = targetY - b.y;
-        const len = Math.hypot(dx, dy) || 1;
-        b.vx = (dx / len) * speed;
-        b.vy = (dy / len) * speed;
-        b.spin = (dy / len) * 80;
-        sfx.paddle.play();
-      }
-    }
+    if (isAuthoritative) {
+      // Collisions with paddles
+      State.balls.forEach(b => { collideBallWithPaddle(b, left); collideBallWithPaddle(b, right); });
 
-    // PowerUp pickup
-    for (const pu of State.powerUps) {
+      // Auto-return if ball gets stuck near AI side (realistic nudge back)
       for (const b of State.balls) {
-        if (rectCircleCollide(pu.x - pu.size/2, pu.y - pu.size/2, pu.size, pu.size, b.x, b.y, b.r)) {
-          const hitter = b.vx < 0 ? 'left' : 'right';
-          applyPowerUp(pu, hitter);
-          pu.ttl = 0;
+        const nearRight = b.x > right.x - right.w && b.vx > 0;
+        const stalled = Math.abs(b.vx) < 40 && Math.abs(b.vy) < 40;
+        if (nearRight && stalled) {
+          // Aim back toward left paddle area with slight randomness
+          const targetY = left.y + rand(-50, 50);
+          const speed = 560 + rand(-40, 40);
+          const dx = (left.x + left.w) - b.x;
+          const dy = targetY - b.y;
+          const len = Math.hypot(dx, dy) || 1;
+          b.vx = (dx / len) * speed;
+          b.vy = (dy / len) * speed;
+          b.spin = (dy / len) * 80;
+          sfx.paddle.play();
         }
       }
-    }
-    State.powerUps = State.powerUps.filter(p => p.ttl > 0);
 
-    // Scoring
-    for (const b of [...State.balls]) {
-      if (b.x < -40) { State.rightScore++; sfx.score.play(); State.balls.splice(State.balls.indexOf(b), 1); }
-      if (b.x > W + 40) { State.leftScore++; sfx.score.play(); State.balls.splice(State.balls.indexOf(b), 1); }
-    }
-    if (State.balls.length === 0) {
-      scheduleServe(900);
-    } else if (serveTimeout) {
-      clearTimeout(serveTimeout); serveTimeout = null;
-    }
+      // PowerUp pickup
+      for (const pu of State.powerUps) {
+        for (const b of State.balls) {
+          if (rectCircleCollide(pu.x - pu.size/2, pu.y - pu.size/2, pu.size, pu.size, b.x, b.y, b.r)) {
+            const hitter = b.vx < 0 ? 'left' : 'right';
+            applyPowerUp(pu, hitter);
+            pu.ttl = 0;
+          }
+        }
+      }
+      State.powerUps = State.powerUps.filter(p => p.ttl > 0);
 
-    // Random power-up spawns
-    if (Math.random() < 0.004) spawnPowerUp();
+      // Scoring
+      for (const b of [...State.balls]) {
+        if (b.x < -40) { State.rightScore++; sfx.score.play(); State.balls.splice(State.balls.indexOf(b), 1); }
+        if (b.x > W + 40) { State.leftScore++; sfx.score.play(); State.balls.splice(State.balls.indexOf(b), 1); }
+      }
+      if (State.balls.length === 0) {
+        scheduleServe(900);
+      } else if (serveTimeout) {
+        clearTimeout(serveTimeout); serveTimeout = null;
+      }
+
+      // Random power-up spawns
+      if (Math.random() < 0.004) spawnPowerUp();
+    }
 
     // Input actions
     // Remove need to press Space to serve; keep pause toggle only
@@ -554,22 +610,32 @@
   }
 
   // Controls
-  btnStart.addEventListener('click', () => {
+  function startGame(propagate = true) {
     if (!State.running) {
       State.running = true;
       scheduleServe(400);
+      if (propagate) sendEvent('start');
     }
-  });
-  btnPause.addEventListener('click', () => {
-    State.paused = !State.paused; statusTextEl.textContent = State.paused ? 'Paused' : 'Game on!';
+  }
+
+  function togglePause(propagate = true) {
+    State.paused = !State.paused; 
+    statusTextEl.textContent = State.paused ? 'Paused' : 'Game on!';
     if (State.paused && serveTimeout) { clearTimeout(serveTimeout); serveTimeout = null; }
     if (!State.paused && State.balls.length === 0) scheduleServe(600);
-  });
-  btnReset.addEventListener('click', () => {
+    if (propagate) sendEvent('pause');
+  }
+
+  function resetGame(propagate = true) {
     State.leftScore = 0; State.rightScore = 0; State.balls = []; State.powerUps = [];
     if (serveTimeout) { clearTimeout(serveTimeout); serveTimeout = null; }
     if (State.running && !State.paused) scheduleServe(500);
-  });
+    if (propagate) sendEvent('reset');
+  }
+
+  btnStart.addEventListener('click', () => startGame(true));
+  btnPause.addEventListener('click', () => togglePause(true));
+  btnReset.addEventListener('click', () => resetGame(true));
   modeSelect.addEventListener('change', (e) => { State.mode = e.target.value; });
   difficultySelect.addEventListener('change', (e) => { State.difficulty = e.target.value; });
 
